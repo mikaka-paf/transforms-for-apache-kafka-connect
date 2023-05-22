@@ -16,6 +16,9 @@
 
 package io.aiven.kafka.connect.transforms;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaBuilder;
@@ -23,30 +26,78 @@ import org.apache.kafka.connect.sink.SinkRecord;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class ExtractTopicFromValueSchemaTest {
     @Test
-    void valueSchemaNameToTopicTest() {
+    void null_configs_valueSchemaNameToTopicTest() {
+
         final Schema keySchema = SchemaBuilder.struct().keySchema();
         final Schema valueSchema = SchemaBuilder.struct().name("com.acme.schema.SchemaNameToTopic").schema();
-        final SinkRecord originalRecord  = record(keySchema, "key", valueSchema, "{}");
-        final SinkRecord transformedRecord = transformation().apply(originalRecord);
+        final SinkRecord originalRecord = record(keySchema, "key", valueSchema, "{}");
+        final SinkRecord transformedRecord = transformation(null).apply(originalRecord);
         assertEquals("com.acme.schema.SchemaNameToTopic", transformedRecord.topic());
 
     }
 
-    private ExtractTopicFromValueSchema<SinkRecord> transformation() {
+    @Test
+    void empty_configs_valueSchemaNameToTopicTest() {
+
+        final Schema keySchema = SchemaBuilder.struct().keySchema();
+        final Schema valueSchema = SchemaBuilder.struct().name("com.acme.schema.SchemaNameToTopic").schema();
+        final SinkRecord originalRecord = record(keySchema, "key", valueSchema, "{}");
+        final SinkRecord transformedRecord = transformation(new HashMap<>()).apply(originalRecord);
+        assertEquals("com.acme.schema.SchemaNameToTopic", transformedRecord.topic());
+
+    }
+
+    @Test
+    void config_map_valueSchemaNameToTopicTest() {
+        final Map<String, String> configs = new HashMap<>();
+        configs.put(ExtractTopicFromValueSchemaConfig.SCHEMA_NAME_TO_TOPIC,
+                "com.acme.schema.SchemaNameToTopic1:TheNameToReplace1,"
+                        + "com.acme.schema.SchemaNameToTopic2:TheNameToReplace2,"
+                        + "com.acme.schema.SchemaNameToTopic3:TheNameToReplace3"
+        );
+        final Schema keySchema = SchemaBuilder.struct().keySchema();
+        final Schema valueSchema = SchemaBuilder.struct().name("com.acme.schema.SchemaNameToTopic1").schema();
+        final SinkRecord originalRecord = record(keySchema, "key", valueSchema, "{}");
+        final SinkRecord transformedRecord = transformation(configs).apply(originalRecord);
+        assertEquals("TheNameToReplace1", transformedRecord.topic());
+
+        final Schema valueSchema2 = SchemaBuilder.struct().name("com.acme.schema.SchemaNameToTopic3").schema();
+        final SinkRecord originalRecord2 = record(keySchema, "key", valueSchema2, "{}");
+        final SinkRecord transformedRecord2 = transformation(configs).apply(originalRecord2);
+        assertEquals("TheNameToReplace3", transformedRecord2.topic());
+
+    }
+
+    @Test
+    void regex_config_valueSchemaNameToTopicTest() {
+        final Map<String, String> configs = new HashMap<>();
+        // pass regegx that will parse the class name after last dot
+        configs.put(ExtractTopicFromValueSchemaConfig.REGEX_SCHEMA_NAME_TO_TOPIC,
+                "(?:[.\\t]|^)([^.\\t]*)$");
+        final Schema keySchema = SchemaBuilder.struct().keySchema();
+        final Schema valueSchema = SchemaBuilder.struct().name("com.acme.schema.SchemaNameToTopic").schema();
+        final SinkRecord originalRecord = record(keySchema, "key", valueSchema, "{}");
+        final SinkRecord transformedRecord = transformation(configs).apply(originalRecord);
+        assertEquals("SchemaNameToTopic", transformedRecord.topic());
+
+    }
+
+    private ExtractTopicFromValueSchema<SinkRecord> transformation(final Map<String, ?> configs) {
         final ExtractTopicFromValueSchema<SinkRecord> transform = createTransformationObject();
+        if (configs != null) {
+            transform.configure(configs);
+        }
         return transform;
     }
 
     protected ExtractTopicFromValueSchema<SinkRecord> createTransformationObject() {
         return new ExtractTopicFromValueSchema.Name<>();
     }
+
     protected SinkRecord record(final Schema keySchema,
                                 final Object key,
                                 final Schema valueSchema,
